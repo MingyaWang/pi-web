@@ -1344,6 +1344,15 @@ a.session-tree-main {
   min-height: 0;
 }
 
+/* The "dropdown" session-list style's head: the files' picker above the
+   list, with the files head's own padding and rule. The list below it
+   scrolls inside the tree. */
+.session-dropdown-picker {
+  flex: none;
+  padding: 10px 10px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
 /* Opaque, so the tree under it only shows through while it fades. Stacked
    above it for good: the tree's rows are positioned, and an unpositioned view
    paints its background before them. Only its animation (opacity, transform)

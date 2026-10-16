@@ -12,6 +12,7 @@ import {
   archivedFamilyIds,
   buildArchiveRows,
   buildSessionTree,
+  buildSingleProjectRows,
   effectiveGroupExpansion,
   familiesToArchive,
   familiesToDelete,
@@ -79,6 +80,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
+import { useSessionListStyle } from "@/hooks/useSessionListStyle";
 import { useSessionUiState } from "@/hooks/useSessionUiState";
 import { archiveViewState, filesFoldState, useSidebarMotion } from "@/hooks/useSidebarMotion";
 import { DirectoryPicker } from "./DirectoryPicker";
@@ -560,6 +562,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // way (useFilesPlacement's server snapshot).
   const filesPlacement = useFilesPlacement();
   const stacked = !isMobile && filesPlacement === "below";
+  // How the sessions tab lists sessions: every project as a group of the one
+  // tree, or the current project only, under a project picker. Read like the
+  // layout's choice: the server renders the tree, the stored choice follows
+  // after hydration. A switch unmounts the listing (its scroll and focus go
+  // with it) and closes whatever was open on its rows (the effect by
+  // visibleRows); the data layer, the explorer and the chat stay mounted.
+  const sessionListStyle = useSessionListStyle();
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("sessions");
   const [filesCollapsed, setFilesCollapsed] = useState(false);
   const sessionsTabRef = useRef<HTMLButtonElement>(null);
@@ -1452,6 +1461,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     () => new Map(model.projects.map((project) => [project.key, project])),
     [model.projects],
   );
+  // The "dropdown" style's rows: the current project's live families only
+  // (pinned ones keep their pinned context, archived ones are out), with the
+  // footer every listing shares. Built only while the style is chosen; the
+  // menu reads the rows of whichever listing is in sight (visibleRows).
+  const dropdownRows = useMemo(() => (sessionListStyle === "dropdown" ? buildSingleProjectRows({
+    sessions: allSessions,
+    uiState,
+    runningIds: runningSessionIds,
+    awaitingIds: awaitingInputSessionIds,
+    unreadIds: unreadSessionIds,
+    selectedSessionId,
+    currentProject,
+    archivedCount: model.archivedCount,
+  }) : []), [sessionListStyle, allSessions, uiState, runningSessionIds, awaitingInputSessionIds, unreadSessionIds, selectedSessionId, currentProject, model.archivedCount]);
 
   // The project order is saved as projects turn up: a project without a place
   // renders at the top of its band, and saving it puts it at the top of the
@@ -2194,13 +2217,28 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (!active || active === document.body) previous.focus({ preventScroll: true });
   }, [menu]);
 
-  // A row whose menu is open can leave the tree (archived or deleted in
-  // another window): its menu goes with it.
-  const visibleRows = archiveView ? archiveRows : model.rows;
+  // A row whose menu is open can leave the listing it is in (archived or
+  // deleted in another window): its menu goes with it. The rows are the ones
+  // the view in sight shows: the tree's, or the dropdown style's project
+  // list's (the archive view's while it is open, whichever the style is).
+  const visibleRows = archiveView ? archiveRows : (sessionListStyle === "dropdown" ? dropdownRows : model.rows);
   useEffect(() => {
     if (menu?.kind === "row" && !visibleRows.some((row) => row.key === menu.row.key)) setMenu(null);
     if (menu?.kind === "archive-group" && !visibleRows.some((row) => row.key === `archive:${menu.project.key}`)) setMenu(null);
   }, [menu, visibleRows]);
+
+  // A style switch unmounts the listing a menu, a rename field or a delete
+  // confirmation was open on: they go with it, not anchored to rows that are
+  // no longer rendered. The reveal goes too: the new listing mounts with a
+  // clean slate, and a pending request would scroll or focus it from the old
+  // one's context.
+  useEffect(() => {
+    setMenu(null);
+    setRenamingRootId(null);
+    setRenamingProjectKey(null);
+    setConfirmDeleteRootId(null);
+    setTreeReveal(null);
+  }, [sessionListStyle]);
 
   // Rows are rebuilt on every refresh; the menu acts on the current one.
   const menuRow = menu?.kind === "row"
@@ -2930,13 +2968,50 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             {/* Kept mounted under the archive view, so going back finds it as
                 it was: inert while the archive slides in, then hidden. */}
             <div className="sidebar-sessions-view" hidden={archiveMotion.mainHidden} inert={archiveMotion.mainInert}>
-              <SessionTree
-                {...treeProps}
-                rows={model.rows}
-                emptyLabel={t("sidebar.noSessions")}
-                reveal={treeReveal}
-                onRevealHandled={handleRevealHandled}
-              />
+              {sessionListStyle === "dropdown" ? (
+                <>
+                  {/* The dropdown style's head: the files' project and
+                      worktree picker, full width; the list below it shows
+                      only the picked project's sessions. */}
+                  <div className="session-dropdown-picker">
+                    <ProjectWorktreePicker
+                      layout="stacked"
+                      context={newSessionContext ?? { project: null, worktrees: null, currentWorktreePath: null, projects: projectChoiceList }}
+                      mobile={isMobile}
+                      label={t("sidebar.projectAndWorktree")}
+                      placeholder={initialSessionId && !restoredRef.current ? "" : t("sidebar.selectProject")}
+                      homeDir={homeDir}
+                      projectActivity={projectActivity}
+                      newWorktreeTitle={t("sidebar.createWorktreeTitle")}
+                      onPick={handleFilesPick}
+                      onUseDefaultDirectory={() => { void handleDefaultCwd(); }}
+                      onOpenFolder={handleCustomPathClick}
+                      onRefreshWorktrees={refreshWorktrees}
+                      onCreateWorktree={createWorktree}
+                    />
+                  </div>
+                  {/* Keyed by the project: a switch to another project remounts
+                      the listing, so its scroll and focus start over instead
+                      of landing deep in the new project's rows; a worktree
+                      switch keeps the same project key and the listing. */}
+                  <SessionTree
+                    key={currentProjectKey ?? "no-project"}
+                    {...treeProps}
+                    rows={dropdownRows}
+                    emptyLabel={t("sidebar.noSessions")}
+                    reveal={treeReveal}
+                    onRevealHandled={handleRevealHandled}
+                  />
+                </>
+              ) : (
+                <SessionTree
+                  {...treeProps}
+                  rows={model.rows}
+                  emptyLabel={t("sidebar.noSessions")}
+                  reveal={treeReveal}
+                  onRevealHandled={handleRevealHandled}
+                />
+              )}
             </div>
             {/* Mounted while open and on its way out, inert then, so nothing
                 in it is clicked twice; the tree is back under it at once. */}

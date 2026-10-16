@@ -605,6 +605,48 @@ export function buildArchiveRows(
 }
 
 /**
+ * The "dropdown" session-list style's rows: the current project's live
+ * families only, under the sidebar's project picker. A pinned family of the
+ * project stays in the list with its pinned context, so its row key and menu
+ * (Unpin, not Pin) match the tree's pinned section; an archived family is
+ * out — the footer's archive link opens the shared, global archive view.
+ * Every family of the project shows: no group header and no "show more"
+ * window, unlike a group in the tree. Without a project the rows are the
+ * footer alone: the picker's placeholder and the tree's empty note carry it.
+ */
+export interface SingleProjectInput
+  extends Pick<SessionTreeInput, "sessions" | "uiState" | "runningIds" | "awaitingIds" | "unreadIds" | "selectedSessionId" | "currentProject"> {
+  /** The tree model's archivedCount, every project's: the footer's link reports it. */
+  archivedCount: number;
+}
+
+export function buildSingleProjectRows(input: SingleProjectInput): SidebarRow[] {
+  const { uiState, runningIds, currentProject } = input;
+  const flags: FamilyFlagsInput = input;
+  const rows: SidebarRow[] = [];
+  if (currentProject !== null) {
+    const resolver = createProjectResolver(uiState, currentProject);
+    // Newest first, as the group's families arrive in the tree.
+    const families: SessionFamily[] = [];
+    for (const family of listSessionFamilies(input.sessions)) {
+      if (familyProjectKey(family) !== currentProject.key) continue;
+      if (isFamilyArchived(family, uiState, runningIds)) continue;
+      resolver.noteFamily(family);
+      families.push(family);
+    }
+    const project = resolver.get(currentProject.key);
+    for (const family of families) {
+      const context = isFamilyPinned(family, uiState, runningIds) ? "pinned" : "group";
+      rows.push(sessionRow(family, context, project, flags, null));
+    }
+  }
+  if (rows.length > 0) rows.push({ kind: "spacer", key: "footer-spacer" });
+  rows.push({ kind: "footer-open", key: "footer-open" });
+  if (input.archivedCount > 0) rows.push({ kind: "footer-archived", key: "footer-archived", count: input.archivedCount });
+  return rows;
+}
+
+/**
  * Root ids of live, non-pinned, non-running, non-unread, non-selected
  * families of `projectKey` whose latestModified is older than
  * now - olderThanMs. Transient families have no file and are never archived.

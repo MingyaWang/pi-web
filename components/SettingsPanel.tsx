@@ -15,6 +15,7 @@ import {
 } from "@/hooks/useChatAppearance";
 import { useEnterSendMode, setEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useFilesPlacement, setFilesPlacement } from "@/hooks/useFilesPlacement";
+import { useSessionListStyle, setSessionListStyle } from "@/hooks/useSessionListStyle";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ProjectTrustStatus, ToolSettingsResponse } from "@/lib/api-types";
 import {
@@ -80,6 +81,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
   const enterSendMode = useEnterSendMode();
   const filesPlacement = useFilesPlacement();
+  const sessionListStyle = useSessionListStyle();
   const [shellSettings, setShellSettings] = useState<ToolSettingsResponse | null>(null);
   const [shellSaving, setShellSaving] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
@@ -418,6 +420,41 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
           </div>
         </div>
         <p id="settings-files-placement-description" className="settings-general-description">{t("settings.filesPlacementDescription")}</p>
+        <div className="settings-chat-options">
+          <div
+            className="settings-chat-option settings-chat-switch-option"
+            role="radiogroup"
+            aria-label={t("settings.sessionListStyle")}
+            aria-describedby="settings-session-list-style-description"
+          >
+            <span>{t("settings.sessionListStyle")}</span>
+            <div className="settings-send-mode-options">
+              <label className="settings-send-mode-option">
+                <input
+                  type="radio"
+                  name="session-list-style"
+                  value="tree"
+                  checked={sessionListStyle === "tree"}
+                  onChange={() => setSessionListStyle("tree")}
+                  className="sr-only"
+                />
+                <span className="settings-send-mode-label">{t("settings.sessionListStyleTree")}</span>
+              </label>
+              <label className="settings-send-mode-option">
+                <input
+                  type="radio"
+                  name="session-list-style"
+                  value="dropdown"
+                  checked={sessionListStyle === "dropdown"}
+                  onChange={() => setSessionListStyle("dropdown")}
+                  className="sr-only"
+                />
+                <span className="settings-send-mode-label">{t("settings.sessionListStyleDropdown")}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <p id="settings-session-list-style-description" className="settings-general-description">{t("settings.sessionListStyleDescription")}</p>
       </section>
 
       {shellSettings?.isWindows && (
